@@ -1,0 +1,66 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id              String           @id @default(uuid())
+  name            String
+  email           String           @unique
+  phone_number    String           @unique
+  password        String
+  role            user_role
+  isVerified      Boolean          @default(false)
+  createdAt       DateTime         @default(now())
+  devices         Device[]         @relation("UserDevices")
+  verifiedDevices Device[]         @relation("VerifiedDevices")
+  parent          Parent?
+  sessions        Session[]
+
+  @@map("user")
+}
+
+model Device {
+  id           String    @id @default(uuid())
+  userId       String
+  isVerified   Boolean   @default(false)
+  verifiedAt   DateTime?
+  verifiedById String?
+  user         User      @relation("UserDevices", fields: [userId], references: [id], onDelete: Cascade)
+  verifiedBy   User?     @relation("VerifiedDevices", fields: [verifiedById], references: [id])
+
+  @@index([userId])
+  @@index([verifiedById])
+  @@map("device")
+}
+
+model Session {
+  id        String   @id @default(uuid())
+  userId    String
+  token     String   @db.Text
+  tokenHash String   @unique @db.VarChar(64)
+  expiresAt DateTime
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("session")
+}
+
+model Parent {
+  id     String @id @default(uuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("parent")
+}
+
+enum user_role {
+  ADMIN
+  PARENT
+}
