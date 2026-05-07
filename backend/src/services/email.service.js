@@ -3,6 +3,37 @@ const nodemailer = require("nodemailer");
 let transporterPromise;
 
 const hasAuth = () => process.env.EMAIL_USER && process.env.EMAIL_PASS;
+const emailProvider = () => String(process.env.EMAIL_PROVIDER || "").trim().toLowerCase();
+
+const sendWithResend = async ({ to, subject, text, html }) => {
+  if (!process.env.RESEND_API_KEY) {
+    console.warn("Resend email is not configured. Set RESEND_API_KEY and EMAIL_FROM, or set EMAIL_TEST=true.");
+    return null;
+  }
+
+  const response = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      from: process.env.EMAIL_FROM || process.env.EMAIL_USER,
+      to: [to],
+      subject,
+      text,
+      html
+    })
+  });
+
+  const data = await response.json().catch(() => ({}));
+
+  if (!response.ok) {
+    throw new Error(data.message || `Resend API failed with status ${response.status}`);
+  }
+
+  return data;
+};
 
 const createTransporter = () => {
   if (process.env.EMAIL_TEST === "true") {
@@ -12,8 +43,12 @@ const createTransporter = () => {
     });
   }
 
+  if (emailProvider() === "resend" || process.env.RESEND_API_KEY) {
+    return null;
+  }
+
   if (!hasAuth()) {
-    console.warn("Email service is not configured. Set EMAIL_USER and EMAIL_PASS, or set EMAIL_TEST=true.");
+    console.warn("SMTP email is not configured. Set EMAIL_USER and EMAIL_PASS, set EMAIL_PROVIDER=resend, or set EMAIL_TEST=true.");
     return null;
   }
 
@@ -60,6 +95,10 @@ const getTransporter = async () => {
 };
 
 const sendEmail = async ({ to, subject, text, html }) => {
+  if (process.env.EMAIL_TEST !== "true" && (emailProvider() === "resend" || process.env.RESEND_API_KEY)) {
+    return await sendWithResend({ to, subject, text, html });
+  }
+
   const transporter = await getTransporter();
 
   if (!transporter) {
@@ -220,6 +259,13 @@ const sendAccountCreatedNotification = async (user, password) => {
 const verifyEmailTransporter = async () => {
   if (process.env.EMAIL_TEST === "true") {
     await getTransporter();
+    return true;
+  }
+
+  if (emailProvider() === "resend" || process.env.RESEND_API_KEY) {
+    if (!process.env.RESEND_API_KEY) {
+      return false;
+    }
     return true;
   }
 
